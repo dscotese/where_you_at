@@ -1,87 +1,258 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<meta charset="utf-8">
-	<title>Members</title>
-	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<meta name="apple-mobile-web-app-capable" content="yes">
-	<meta name="apple-mobile-web-app-status-bar-style" content="black">
-	<script src="js/jquery-2.1.0.min.js"></script>
-	<script src="js/jquery.mobile-1.4.2.min.js"></script>
-	<link href="css/jquery.mobile-1.4.2.min.css" rel="stylesheet">
-	<link href="css/my-theme.min.css" rel="stylesheet">
-	<script>
-		var members = new Array();
-		var currentPage = 0;
-		var membersPerPage = 20;
-		var apiKey = "1d4374541616469253c70274a7c6d6a";
-		var groupName = "Temecula-Valley-Software-Developers";
+  <meta charset="utf-8">
+  <title>First screen</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <script type="text/javascript" src="phonegap.js"></script>
+  <script src="js/jquery-2.1.0.min.js"></script>
+  <script>
+  	$(document).on("mobileinit",function() {
+		$.mobile.autoInitializePage = false;
+ 	});        
+  </script>
+  <script src="js/jquery.mobile-1.4.2.min.js"></script>
+  <link href="css/jquery.mobile-1.4.2.min.css" rel="stylesheet">
+  <link href="css/my-theme.min.css" rel="stylesheet">
+  <script>
+  
+   // Wait for PhoneGap to load
+   // document.addEventListener("deviceready", onDeviceReady, false);
+   
+ 	var authWindow; // Used to store a reference to InAppBrowser window
+ 	var accessToken; // The token obtained for an authorized user
+ 	var loadingAuthPage; // Used to track the initial loading of the OAuth page
+	var userId;
+	var userName;
+	var wya_token; // Token used for access to WhereYouAt server
+
+	//var serverBaseUrl = "http://192.168.1.4:1337/";
+	var serverBaseUrl = "http://amaltsev-test.apigee.net/whereyouat_api/";
+
+  // jQuery document.ready function instructs the browser to execute its code after the DOM finishes loading
+    $(function () {
+		$('#btn_login').on('click', doLogin);
+		$('#btn_verify').on('click', verifyIdentity);
 		
-		// jQuery document.ready function instructs the browser to execute its code after the DOM finishes loading
-		$(function () {
-			loadMembers();
-				
-		    // Bind the click on the submit button to the createBook function
-			$('#prev-page-button').click(function() {
-				if(currentPage > 0) {
-					currentPage--;
-					loadMembers();
-				}
-			});
-			
-			$('#next-page-button').click(function() {
-				currentPage++;
-				loadMembers();
-			});
-		});
-      
-		function loadMembers() {
-			var requestUrl = "http://api.meetup.com/2/members?group_urlname=" + groupName + "&key=" + apiKey + "&offset=" + currentPage + "&page=" + membersPerPage;
-			
-			$.getJSON( requestUrl, function( data ) {						 
-				members = data.results;
-							 
-				// Empty the list of any previous items
-				$('#members-list').empty();
-				// Loop over the items in the Collection
-				$.each( members, function( key, val ) {
-				$('#members-list').append('<li><h3>'+val.name+'</h3><p>'+val.bio+'</p></li>');
-				});
-							 
-				// Reapply the CSS to the new list items
-				$('#members-list').listview('refresh');
-					         
-				// Automatically scroll to the top of the page
-				jQuery('html,body').animate({scrollTop:0},0);
-					         
-				console.log(members);
-			});
+    	var initial = "page-login";
+
+ 		if(localStorage["wya_token"]) {
+			wya_token = localStorage["wya_token"];
+			userId = localStorage["userId"];
+			showUserInfo();
+		//	initial = "page-profile";
+		//	loadProfile();
 		}
-	</script>
+		
+    	//set the page hash to our start page
+    	window.location.hash = initial;
+    	$.mobile.initializePage();
+    });
+
+
+	function showUserInfo() {
+		// If the user info doesn't exist in the storage then bail
+		if(!localStorage["userId"]) return;
+		
+		// Set the values for the info
+		$('#user_name').html(localStorage["userName"]);
+		$('#user_id').html("<b>ID:   </b>" + localStorage["userId"]);
+	}
+	
+	
+	function doLogin() {
+		var OAuthURL = "https://secure.meetup.com/oauth2/authorize?client_id=ig2nen9lq9iut7ftppm74uoefp" +
+							"&response_type=token&redirect_uri=http://localhost";
+		
+		loadingAuthPage = true;
+		
+		// Open OAuth page in the InAppBrowser window
+		authWindow = window.open(OAuthURL, '_blank', 'location=no,hidden=yes');
+
+		// Start activity indicator
+		$.mobile.loading("show");
+    	
+   		authWindow.addEventListener('loadstop', function(event) {
+   			// If we just finished loading the Meetup OAuth page, then make it visible
+   			if(loadingAuthPage) {
+   				// Stop activity indicator
+				$.mobile.loading("hide");
+				
+				// Make the OAuth window visible
+   				authWindow.show();
+   				loadingAuthPage = false;
+   			}
+   		});
+   		
+   		authWindow.addEventListener('loadstart', function(event) {
+			var url = event.url;
+			
+			// Execute reg-exp on the URL. If 'access_token' is absent the result will be null.
+			// Otherwise the result is a two-element array, with second element containing the actual token.
+			var token = /access_token=(\w+)/.exec(url);
+			var error = /error=/.exec(url);
+
+			if (token) {
+				authWindow.close();
+				accessToken = token[1];
+				
+				// Store access_token in the local storage
+				localStorage["accessToken"] = accessToken;
+			
+				performLogin();
+				return;
+			}
+			
+			// Authorization was denied or failed
+			if(error) {
+				authWindow.close();
+				token = null;
+				alert("Error");
+			}
+		});
+	}
+
+
+	function performLogin() {
+		var requestUrl = serverBaseUrl + "login";
+		
+		// Start activity indicator
+		$.mobile.loading("show");
+		
+	    $.ajax({
+    		type: 'POST',
+    		url: requestUrl,
+    		data: JSON.stringify({ token: accessToken }),
+    		contentType: "application/json",
+    		dataType: 'json'
+		})
+		.done( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			if(data.success) {
+				wya_token = data.token;
+				localStorage["wya_token"] = wya_token;
+				
+				userId = data.id;
+				localStorage["userId"] = userId;
+				
+				alert("WYA login successful: " + JSON.stringify(data));
+				loadProfile();
+			}
+			else
+				alert("WYA login unsuccessful: " + JSON.stringify(data));
+		})
+		.fail( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			alert("WYA login failed: " + JSON.stringify(data)); 
+		});
+	}
+
+
+	function loadProfile() {
+		// Request only the specified fields of the profile of the OAuth'd user
+		var requestUrl = "https://api.meetup.com/2/member/self?only=name,id,photo&access_token=" + accessToken;
+		
+		// Start activity indicator with text
+		$.mobile.loading( "show", { text: "Loading profile", textVisible: true, theme: "b" });
+		
+		$.getJSON( requestUrl)
+		.done( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			userName = data.name;			
+			localStorage["userName"] = userName;
+			
+			showUserInfo();
+			
+			var picUrl = data.photo.photo_link;
+			$('#profile_pic').attr('src', picUrl);
+			
+			$.mobile.changePage( "#page-profile", { transition: "slideup", changeHash: false });
+		})
+		.fail( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			alert("Failed with data: " + JSON.stringify(data)); 
+		});
+	}
+
+	function verifyIdentity() {
+		var requestUrl = serverBaseUrl + "verify";
+		
+		// Start activity indicator with text
+		$.mobile.loading( "show", { text: "Verifying", textVisible: true, theme: "b" });
+
+	    $.ajax({
+    		type: 'POST',
+    		url: requestUrl,
+    		data: JSON.stringify({ token: accessToken }),
+    		contentType: "application/json",
+    		dataType: 'json'
+		})
+		.done( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			if(data.success)
+				alert("Verification successful");
+			else
+				alert("Verification failed");
+		})
+		.fail( function( data ) {
+			// Hide activity indicator
+			$.mobile.loading("hide");
+			
+			alert("Failed with data: " + JSON.stringify(data)); 
+		});
+	}
+	
+  </script>
 </head>
 <body>
-  <div data-role="page" data-control-title="Home" id="members-page">
-      <div data-theme="b" data-role="header" data-position="fixed">
+  <div data-role="page" data-control-title="Login" id="page-login">
+      <div data-theme="a" data-role="header">
           <h3>
-              Group members
+              Login
           </h3>
       </div>
       <div data-role="content">
-          <ul id="members-list" data-role="listview" data-filter="true" data-divider-theme="b" data-inset="false">
-              <li data-theme="c">
-                  <h3>Member name</h3>
-                  <p>Member bio</p>
-              </li>
-          </ul>
+      	<div style="margin:0 auto; text-align:center;">
+			<img id="img_logo" src="img/logo.png" alt="Logo" style="width:290px; height:100px;">
+      	</div>
+		<br><br>
+              
+		<a id="btn_login" data-role="button" href="#">
+                  Login via Meetup
+		</a>
       </div>
-      
-      <a id="prev-page-button" data-role="button">
-          Previous page
-      </a>               
-      <a id="next-page-button" data-role="button">
-          Next page
-      </a>               
-
   </div>
+
+  <div data-role="page" data-control-title="Login result" id="page-profile">
+      <div data-theme="a" data-role="header">
+          <h3>
+              Profile
+          </h3>
+      </div>
+      <div data-role="content">
+      	<div style="margin:0 auto; margin-top: 20px; text-align:center;">
+			<img id="profile_pic" src="" alt="profile picture" style="height:30%; border: 1px solid #b8b8b8;">
+      	</div>
+		<p id="user_name" style="font-size: 25px;">Name</p>
+		<p id="user_id" style="font-size: 15px;">ID</p>
+		<br><br>
+		<a id="btn_verify" data-role="button" href="#">
+                  Verify identity
+		</a>
+       </div>
+  </div>
+
 </body>
 </html>
