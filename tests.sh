@@ -1,2 +1,3 @@
+#! /bin/bash
 # No tests yet.
-0;
+exit 0;
